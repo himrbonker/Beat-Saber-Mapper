@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BLADEGEN // Auto Mapper</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root{
+    --bg:#0a0a10;
+    --panel:#14141d;
+    --panel2:#1b1b26;
+    --line:#2a2a38;
+    --red:#ff3b5c;
+    --red-dim:#7a2233;
+    --blue:#3ba7ff;
+    --blue-dim:#1f4a70;
+    --text:#eef0f7;
+    --dim:#8489a0;
+    --gold:#ffc93c;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(ellipse at 20% -10%, rgba(255,59,92,0.10), transparent 45%),
+      radial-gradient(ellipse at 85% 0%, rgba(59,167,255,0.10), transparent 45%),
+      var(--bg);
+    color:var(--text);
+    font-family:'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    padding:28px 18px 60px;
+  }
+  .wrap{max-width:960px;margin:0 auto;}
+
+  /* ---- header ---- */
+  header{margin-bottom:28px;}
+  .eyebrow{
+    font-size:11px;letter-spacing:4px;color:var(--dim);
+    text-transform:uppercase;font-weight:700;margin-bottom:6px;
+  }
+  h1{
+    font-size:38px;margin:0 0 6px;font-weight:900;letter-spacing:1px;
+    text-transform:uppercase;line-height:1;
+    background:linear-gradient(100deg,var(--red) 0%, var(--text) 30%, var(--text) 70%, var(--blue) 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .sub{color:var(--dim);font-size:14px;max-width:560px;line-height:1.5;}
+  .saberline{
+    height:3px;margin:18px 0 0;
+    background:linear-gradient(90deg,var(--red),transparent 45%,transparent 55%,var(--blue));
+    opacity:.7;
+  }
+
+  /* ---- cards ---- */
+  .card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    padding:22px 24px;
+    margin-bottom:18px;
+    clip-path:polygon(18px 0,100% 0,100% calc(100% - 18px),calc(100% - 18px) 100%,0 100%,0 18px);
+    position:relative;
+  }
+  .card h2{
+    font-size:13px;letter-spacing:3px;text-transform:uppercase;
+    margin:0 0 16px;color:var(--dim);font-weight:800;
+    display:flex;align-items:center;gap:10px;
+  }
+  .card h2::after{content:"";flex:1;height:1px;background:var(--line);}
+
+  /* ---- dropzone ---- */
+  .drop{
+    border:1.5px dashed var(--line);
+    padding:36px 20px;
+    text-align:center;
+    cursor:pointer;
+    transition:border-color .15s, background .15s;
+  }
+  .drop:hover, .drop.drag{border-color:var(--blue);background:rgba(59,167,255,0.05);}
+  .drop .big{font-size:15px;font-weight:700;letter-spacing:.5px;}
+  .drop .small{font-size:12px;color:var(--dim);margin-top:6px;}
+  #fileInput{display:none;}
+  .filename{margin-top:14px;font-size:13px;color:var(--gold);font-weight:600;word-break:break-all;}
+
+  /* ---- form grid ---- */
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media(max-width:640px){.grid2{grid-template-columns:1fr;}}
+  label{
+    display:block;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;
+    color:var(--dim);font-weight:700;margin-bottom:6px;
+  }
+  input[type=text], input[type=number]{
+    width:100%;background:var(--panel2);border:1px solid var(--line);
+    color:var(--text);padding:10px 12px;font-size:14px;border-radius:2px;
+    outline:none;
+  }
+  input[type=text]:focus, input[type=number]:focus{border-color:var(--blue);}
+  .field{margin-bottom:14px;}
+
+  /* ---- bpm readout ---- */
+  .bpmrow{display:flex;align-items:center;gap:24px;flex-wrap:wrap;}
+  .bpmbox{
+    font-size:52px;font-weight:900;line-height:1;
+    color:var(--gold);min-width:140px;
+    text-shadow:0 0 24px rgba(255,201,60,0.35);
+  }
+  .bpmbox .unit{font-size:14px;color:var(--dim);font-weight:700;letter-spacing:2px;margin-left:6px;}
+  .bpmoverride{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim);}
+  .bpmoverride input[type=number]{width:90px;}
+
+  canvas{width:100%;display:block;background:var(--panel2);border:1px solid var(--line);}
+
+  /* ---- difficulty chips ---- */
+  .chips{display:flex;gap:10px;flex-wrap:wrap;}
+  .chip{
+    border:1px solid var(--line);background:var(--panel2);
+    padding:10px 16px;cursor:pointer;user-select:none;
+    font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;
+    display:flex;flex-direction:column;gap:2px;min-width:110px;
+    clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
+    transition:border-color .15s, background .15s;
+  }
+  .chip .stat{font-size:10px;color:var(--dim);font-weight:600;letter-spacing:0.5px;text-transform:none;}
+  .chip.on{border-color:var(--blue);background:rgba(59,167,255,0.10);}
+  .chip.on .stat{color:var(--blue);}
+
+  /* ---- buttons ---- */
+  button.primary{
+    background:linear-gradient(100deg,var(--red),var(--blue));
+    color:#fff;border:none;padding:15px 26px;font-size:13px;font-weight:900;
+    letter-spacing:2px;text-transform:uppercase;cursor:pointer;width:100%;
+    clip-path:polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px);
+  }
+  button.primary:disabled{opacity:.35;cursor:not-allowed;}
+  button.secondary{
+    background:var(--panel2);color:var(--text);border:1px solid var(--line);
+    padding:13px 20px;font-size:12px;font-weight:800;letter-spacing:1.5px;
+    text-transform:uppercase;cursor:pointer;width:100%;
+  }
+  button.secondary:hover{border-color:var(--gold);}
+
+  .status{font-size:12px;color:var(--dim);margin-top:10px;min-height:16px;font-family:monospace;}
+  .progressbar{height:4px;background:var(--panel2);margin-top:10px;overflow:hidden;}
+  .progressbar > div{height:100%;width:0%;background:linear-gradient(90deg,var(--red),var(--blue));transition:width .2s;}
+
+  /* ---- results ---- */
+  .resultgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px;}
+  .resultcard{background:var(--panel2);border:1px solid var(--line);padding:12px 14px;}
+  .resultcard .diff{font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--blue);}
+  .resultcard .notecount{font-size:22px;font-weight:900;margin-top:4px;}
+  .resultcard .nps{font-size:11px;color:var(--dim);margin-top:2px;}
+
+  footer{margin-top:30px;font-size:12px;color:var(--dim);line-height:1.7;}
+  footer b{color:var(--text);}
+  .legend{display:flex;gap:16px;font-size:11px;color:var(--dim);margin-top:10px;}
+  .legend span{display:flex;align-items:center;gap:6px;}
+  .dot{width:9px;height:9px;display:inline-block;}
+  .dot.r{background:var(--red);}
+  .dot.b{background:var(--blue);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Client-side · nothing leaves your browser</div>
+    <h1>Bladegen // Auto Mapper</h1>
+    <div class="sub">Drop in a song. It listens for tempo and hit energy, then swings out a full Beat Saber map — five difficulties, real cut-direction flow, ready to drop into <b style="color:var(--text)">CustomLevels</b>.</div>
+    <div class="saberline"></div>
+  </header>
+
+  <div class="card">
+    <h2>01 · Song</h2>
+    <div class="drop" id="drop">
+      <div class="big">Click or drag an audio file here</div>
+      <div class="small">MP3, WAV, OGG, M4A — analysis runs entirely on-device</div>
+      <div class="filename" id="filename"></div>
+      <input type="file" id="fileInput" accept="audio/*">
+    </div>
+    <canvas id="wave" height="110" style="margin-top:16px;display:none;"></canvas>
+    <audio id="player" controls style="width:100%;margin-top:10px;display:none;"></audio>
+  </div>
+
+  <div class="card" id="metaCard" style="display:none;">
+    <h2>02 · Metadata</h2>
+    <div class="grid2">
+      <div class="field"><label>Song Name</label><input type="text" id="songName"></div>
+      <div class="field"><label>Artist</label><input type="text" id="artistName"></div>
+      <div class="field"><label>Mapper Name</label><input type="text" id="mapperName" value="Bladegen Auto Mapper"></div>
+      <div class="field"><label>Song Sub Name (optional)</label><input type="text" id="subName"></div>
+    </div>
+  </div>
+
+  <div class="card" id="tempoCard" style="display:none;">
+    <h2>03 · Tempo Detection</h2>
+    <div class="bpmrow">
+      <div class="bpmbox" id="bpmReadout">--<span class="unit">BPM</span></div>
+      <div class="bpmoverride">
+        <input type="checkbox" id="bpmOverrideToggle">
+        <label style="margin:0;">Manual override</label>
+        <input type="number" id="bpmOverrideVal" step="0.1" min="40" max="300" disabled>
+      </div>
+    </div>
+    <div class="status" id="analyzeStatus"></div>
+    <div class="progressbar"><div id="analyzeProgress"></div></div>
+  </div>
+
+  <div class="card" id="diffCard" style="display:none;">
+    <h2>04 · Difficulties</h2>
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <div class="card" id="genCard" style="display:none;">
+    <h2>05 · Generate</h2>
+    <button class="primary" id="genBtn">Slice the beats</button>
+    <div class="status" id="genStatus"></div>
+    <div class="progressbar"><div id="genProgress"></div></div>
+  </div>
+
+  <div class="card" id="resultCard" style="display:none;">
+    <h2>06 · Map Ready</h2>
+    <div class="resultgrid" id="resultGrid"></div>
+    <button class="secondary" id="downloadBtn">Download map folder (.zip)</button>
+    <div class="legend">
+      <span><span class="dot r"></span>Red saber note</span>
+      <span><span class="dot b"></span>Blue saber note</span>
+    </div>
+  </div>
+
+  <footer>
+    <b>Before you play it:</b> Beat Saber wants the audio as <b>.ogg</b>. This tool bundles your original file as-is — if it isn't already .ogg, convert it (Audacity, or any free online converter) and swap the file inside the folder before dropping it into <b>CustomLevels</b>.<br>
+    No walls or bombs are generated yet — this pass focuses on getting note timing, lanes, and swing flow right. Open the map in <b>ChroMapper</b> to fine-tune, add walls, or touch up any awkward patterns — the detected BPM and grid carry over cleanly.<br>
+    Tempo detection uses a comb-filter search over the song's onset energy, so it works best on tracks with a steady, audible beat. Very ambient or rubato songs may need the manual BPM override.
+  </footer>
+</div>
+
+<script>
+/* ============================= STATE ============================= */
+const state = {
+  file:null, audioBuffer:null, duration:0, sampleRate:0,
+  monoData:null, flux:null, hopDuration:0, numHops:0,
+  bpm:120, offsetSec:0,
+  selectedDiffs:new Set(['Normal','Hard','Expert']),
+  results:{}, // diffKey -> notes array
+};
+
+const PRESETS = {
+  Easy:       {rank:1, njs:10, subdivision:1,    targetNPS:1.2, minGap:0.40, allowDoubles:false, doubleChance:0,    repeatChance:0.04},
+  Normal:     {rank:3, njs:12, subdivision:0.5,  targetNPS:1.8, minGap:0.28, allowDoubles:false, doubleChance:0,    repeatChance:0.06},
+  Hard:       {rank:5, njs:14, subdivision:0.5,  targetNPS:2.6, minGap:0.16, allowDoubles:true,  doubleChance:0.12, repeatChance:0.08},
+  Expert:     {rank:7, njs:16, subdivision:0.25, targetNPS:3.9, minGap:0.11, allowDoubles:true,  doubleChance:0.22, repeatChance:0.10},
+  ExpertPlus: {rank:9, njs:18, subdivision:0.25, targetNPS:5.2, minGap:0.09, allowDoubles:true,  doubleChance:0.34, repeatChance:0.12},
+};
+const DIFF_ORDER = ['Easy','Normal','Hard','Expert','ExpertPlus'];
+const DIFF_FILE = d => (d === 'ExpertPlus' ? 'ExpertPlusStandard.dat' : d + 'Standard.dat');
+
+/* ============================= UI WIRING ============================= */
+const $ = id => document.getElementById(id);
+
+const drop = $('drop'), fileInput = $('fileInput');
+drop.addEventListener('click', () => fileInput.click());
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+drop.addEventListener('drop', e => {
+  e.preventDefault(); drop.classList.remove('drag');
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => { if (e.target.files.length) handleFile(e.target.files[0]); });
+
+$('bpmOverrideToggle').addEventListener('change', e => {
+  $('bpmOverrideVal').disabled = !e.target.checked;
+});
+
+// build difficulty chips
+const chipsEl = $('chips');
+DIFF_ORDER.forEach(d => {
+  const p = PRESETS[d];
+  const chip = document.createElement('div');
+  chip.className = 'chip' + (state.selectedDiffs.has(d) ? ' on' : '');
+  chip.innerHTML = `<span>${d.replace('Plus','+')}</span><span class="stat">NJS ${p.njs} · ~${p.targetNPS} n/s</span>`;
+  chip.addEventListener('click', () => {
+    if (state.selectedDiffs.has(d)) state.selectedDiffs.delete(d);
+    else state.selectedDiffs.add(d);
+    chip.classList.toggle('on');
+  });
+  chipsEl.appendChild(chip);
+});
+
+$('genBtn').addEventListener('click', runGeneration);
+$('downloadBtn').addEventListener('click', downloadZip);
+
+/* ============================= FILE HANDLING ============================= */
+async function handleFile(file){
+  state.file = file;
+  $('filename').textContent = file.name;
+  $('songName').value = file.name.replace(/\.[^/.]+$/, '');
+
+  const player = $('player');
+  player.src = URL.createObjectURL(file);
+  player.style.display = 'block';
+
+  $('metaCard').style.display = 'block';
+  $('tempoCard').style.display = 'block';
+  $('diffCard').style.display = 'block';
+  $('genCard').style.display = 'block';
+  $('resultCard').style.display = 'none';
+
+  setStatus('analyzeStatus', 'Decoding audio…');
+  setProgress('analyzeProgress', 5);
+
+  const arrayBuffer = await file.arrayBuffer();
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  const actx = new AudioCtx();
+  const audioBuffer = await actx.decodeAudioData(arrayBuffer);
+  state.audioBuffer = audioBuffer;
+  state.duration = audioBuffer.duration;
+  state.sampleRate = audioBuffer.sampleRate;
+  state.monoData = toMono(audioBuffer);
+
+  drawWaveform(state.monoData);
+  $('wave').style.display = 'block';
+
+  setStatus('analyzeStatus', 'Measuring onset energy…');
+  setProgress('analyzeProgress', 25);
+  await nextFrame();
+
+  computeFlux();
+
+  setStatus('analyzeStatus', 'Searching tempo (comb filter)…');
+  setProgress('analyzeProgress', 55);
+  await nextFrame();
+
+  const tempo = estimateTempo();
+  state.bpm = tempo.bpm;
+  state.offsetSec = tempo.offsetSec;
+  $('bpmReadout').innerHTML = tempo.bpm.toFixed(1) + '<span class="unit">BPM</span>';
+  $('bpmOverrideVal').value = tempo.bpm.toFixed(1);
+
+  drawBeatGrid();
+  setStatus('analyzeStatus', `Done — ${state.numHops} analysis windows over ${state.duration.toFixed(1)}s.`);
+  setProgress('analyzeProgress', 100);
+}
+
+function toMono(buffer){
+  const ch = buffer.numberOfChannels;
+  if (ch === 1) return buffer.getChannelData(0);
+  const len = buffer.length;
+  const out = new Float32Array(len);
+  for (let c = 0; c < ch; c++){
+    const data = buffer.getChannelData(c);
+    for (let i = 0; i < len; i++) out[i] += data[i] / ch;
+  }
+  return out;
+}
+
+function nextFrame(){ return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); }
+
+/* ============================= ONSET / FLUX ANALYSIS ============================= */
+const HOP = 512, WIN = 1024;
+
+function computeFlux(){
+  const data = state.monoData;
+  const sr = state.sampleRate;
+  const numHops = Math.max(1, Math.floor((data.length - WIN) / HOP));
+  const energy = new Float32Array(numHops);
+
+  for (let i = 0; i < numHops; i++){
+    const start = i * HOP;
+    let sum = 0;
+    for (let j = 0; j < WIN; j++){
+      const v = data[start + j] || 0;
+      sum += v * v;
+    }
+    energy[i] = sum / WIN;
+  }
+
+  const flux = new Float32Array(numHops);
+  for (let i = 1; i < numHops; i++){
+    const d = energy[i] - energy[i - 1];
+    flux[i] = d > 0 ? d : 0;
+  }
+  // light smoothing (3-tap moving average)
+  const smoothed = new Float32Array(numHops);
+  for (let i = 0; i < numHops; i++){
+    const a = flux[Math.max(0, i - 1)], b = flux[i], c = flux[Math.min(numHops - 1, i + 1)];
+    smoothed[i] = (a + b + c) / 3;
+  }
+  // min-max normalize to 0..1
+  let mn = Infinity, mx = -Infinity;
+  for (let i = 0; i < numHops; i++){ if (smoothed[i] < mn) mn = smoothed[i]; if (smoothed[i] > mx) mx = smoothed[i]; }
+  const range = (mx - mn) || 1;
+  for (let i = 0; i < numHops; i++) smoothed[i] = (smoothed[i] - mn) / range;
+
+  state.flux = smoothed;
+  state.numHops = numHops;
+  state.hopDuration = HOP / sr;
+}
+
+function fluxAt(tSec){
+  const idx = Math.round(tSec / state.hopDuration);
+  if (idx < 0) return 0;
+  if (idx >= state.numHops) return 0;
+  return state.flux[idx];
+}
+
+/* ---- comb-filter tempo estimation ---- */
+function combScore(bpm, hopDuration, flux, numHops, phaseTries){
+  const periodHops = (60 / bpm) / hopDuration;
+  let best = { score: -Infinity, phase: 0 };
+  for (let ph = 0; ph < phaseTries; ph++){
+    const phase = ph * (periodHops / phaseTries);
+    let score = 0, count = 0;
+    for (let t = phase; t < numHops; t += periodHops){
+      const idx = Math.round(t);
+      if (idx < numHops) score += flux[idx];
+      count++;
+    }
+    if (count < 4) continue;
+    const norm = score / Math.sqrt(count);
+    if (norm > best.score) best = { score: norm, phase };
+  }
+  return best;
+}
+
+function estimateTempo(){
+  const { flux, hopDuration } = state;
+  // cap analysis window to ~120s of audio for speed on long tracks
+  const capHops = Math.min(state.numHops, Math.floor(120 / hopDuration));
+
+  let best = { score: -Infinity, bpm: 120, phase: 0 };
+  for (let bpm = 60; bpm <= 200; bpm += 0.5){
+    const r = combScore(bpm, hopDuration, flux, capHops, 8);
+    if (r.score > best.score) best = { score: r.score, bpm, phase: r.phase };
+  }
+  // fine refine around best coarse bpm
+  let refined = { ...best };
+  for (let bpm = best.bpm - 1; bpm <= best.bpm + 1; bpm += 0.05){
+    const r = combScore(bpm, hopDuration, flux, capHops, 8);
+    if (r.score > refined.score) refined = { score: r.score, bpm, phase: r.phase };
+  }
+
+  const beatDur = 60 / refined.bpm;
+  let offsetSec = refined.phase * hopDuration;
+  offsetSec = offsetSec % beatDur; // fold into first beat so grid covers full song
+
+  if ($('bpmOverrideToggle').checked){
+    const manual = parseFloat($('bpmOverrideVal').value);
+    if (manual > 0) return { bpm: manual, offsetSec: offsetSec % (60 / manual) };
+  }
+
+  return { bpm: Math.round(refined.bpm * 100) / 100, offsetSec };
+}
+
+/* ============================= WAVEFORM DRAWING ============================= */
+function drawWaveform(data){
+  const canvas = $('wave');
+  canvas.width = canvas.clientWidth || 900;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  const step = Math.ceil(data.length / w);
+  ctx.strokeStyle = '#3ba7ff';
+  ctx.globalAlpha = 0.8;
+  ctx.beginPath();
+  for (let x = 0; x < w; x++){
+    let min = 1, max = -1;
+    const start = x * step;
+    for (let i = 0; i < step; i++){
+      const v = data[start + i] || 0;
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    const y1 = h / 2 + min * (h / 2) * 0.9;
+    const y2 = h / 2 + max * (h / 2) * 0.9;
+    ctx.moveTo(x, y1);
+    ctx.lineTo(x, y2);
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+function drawBeatGrid(){
+  const canvas = $('wave');
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const beatDur = 60 / state.bpm;
+  let t = state.offsetSec;
+  let i = 0;
+  ctx.strokeStyle = 'rgba(255,201,60,0.35)';
+  ctx.lineWidth = 1;
+  while (t < state.duration){
+    const x = (t / state.duration) * w;
+    const strong = i % 4 === 0;
+    ctx.globalAlpha = strong ? 0.65 : 0.25;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+    t += beatDur;
+    i++;
+  }
+  ctx.globalAlpha = 1;
+}
+
+/* ============================= NOTE GENERATION ============================= */
+function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+function randInt(lo, hi){ return Math.floor(Math.random() * (hi - lo + 1)) + lo; }
+
+// cut direction codes: 0 up, 1 down, 2 left, 3 right, 4 up-left, 5 up-right, 6 down-left, 7 down-right
+function dirForSwing(swingDown, laneDelta){
+  if (laneDelta > 0) return swingDown ? 7 : 5;
+  if (laneDelta < 0) return swingDown ? 6 : 4;
+  return swingDown ? 1 : 0;
+}
+
+function mkNote(tSec, lane, layer, type, dir){
+  return { _time: tSec * state.bpm / 60, _lineIndex: lane, _lineLayer: layer, _type: type, _cutDirection: dir };
+}
+
+// Sorted-array insert that enforces a minimum gap against both neighbors.
+// Returns true and inserts t if it fits, false otherwise. O(log n) search + O(n) splice.
+function fitsAndInsert(sortedArr, t, minGap){
+  let lo = 0, hi = sortedArr.length;
+  while (lo < hi){
+    const mid = (lo + hi) >> 1;
+    if (sortedArr[mid] < t) lo = mid + 1; else hi = mid;
+  }
+  const prev = lo > 0 ? sortedArr[lo - 1] : -Infinity;
+  const next = lo < sortedArr.length ? sortedArr[lo] : Infinity;
+  if (t - prev < minGap || next - t < minGap) return false;
+  sortedArr.splice(lo, 0, t);
+  return true;
+}
+
+function generateDifficulty(preset){
+  const beatDur = 60 / state.bpm;
+
+  // 1. Build a dense candidate grid at this difficulty's subdivision, scored by onset strength.
+  const candidates = [];
+  for (let b = 0; ; b += preset.subdivision){
+    const t = state.offsetSec + b * beatDur;
+    if (t > state.duration - 0.15) break;
+    if (t < 0.2) continue;
+    candidates.push({ t, s: fluxAt(t) + Math.random() * 0.001 }); // tiny jitter breaks ties
+  }
+
+  // 2. Figure out how many note EVENTS we need to hit the target blocks/sec,
+  //    accounting for double notes contributing an extra block.
+  const expectedBlocksPerEvent = 1 + (preset.allowDoubles ? preset.doubleChance : 0);
+  const targetEvents = Math.max(8, Math.round((preset.targetNPS * state.duration) / expectedBlocksPerEvent));
+
+  // 3. Greedily take the strongest-onset candidates first, respecting minGap spacing.
+  //    This concentrates notes in energetic sections while still guaranteeing the overall rate.
+  const byStrength = [...candidates].sort((a, b) => b.s - a.s);
+  const chosenTimes = [];
+  for (const c of byStrength){
+    if (chosenTimes.length >= targetEvents) break;
+    fitsAndInsert(chosenTimes, c.t, preset.minGap);
+  }
+  // chosenTimes is already chronologically sorted thanks to fitsAndInsert.
+
+  // 4. Walk the chosen beats in time order and lay down notes with alternating swing flow.
+  const notes = [];
+  let lastType = 1, lastLane = 1, lastLayer = 0, swingDown = true;
+
+  for (const t of chosenTimes){
+    const isDouble = preset.allowDoubles && Math.random() < preset.doubleChance;
+
+    if (isDouble){
+      const layer = Math.random() < 0.5 ? 0 : 1;
+      notes.push(mkNote(t, 1, layer, 0, dirForSwing(swingDown, -1)));
+      notes.push(mkNote(t, 2, layer, 1, dirForSwing(swingDown, 1)));
+      lastLane = 1.5;
+      lastLayer = layer;
+    } else {
+      const type = Math.random() < preset.repeatChance ? lastType : (lastType === 0 ? 1 : 0);
+      const lane = clamp(Math.round(lastLane) + randInt(-1, 1), 0, 3);
+      const layer = clamp(lastLayer + randInt(-1, 1), 0, 2);
+      const dir = dirForSwing(swingDown, lane - Math.round(lastLane));
+      notes.push(mkNote(t, lane, layer, type, dir));
+      lastType = type; lastLane = lane; lastLayer = layer;
+    }
+    swingDown = !swingDown;
+  }
+  return notes;
+}
+
+/* ============================= GENERATION FLOW ============================= */
+async function runGeneration(){
+  if (!state.audioBuffer){ return; }
+  if (state.selectedDiffs.size === 0){ setStatus('genStatus', 'Pick at least one difficulty.'); return; }
+
+  $('genBtn').disabled = true;
+  setStatus('genStatus', 'Swinging patterns…');
+  setProgress('genProgress', 10);
+  await nextFrame();
+
+  state.results = {};
+  const diffs = DIFF_ORDER.filter(d => state.selectedDiffs.has(d));
+  for (let i = 0; i < diffs.length; i++){
+    const d = diffs[i];
+    state.results[d] = generateDifficulty(PRESETS[d]);
+    setProgress('genProgress', 10 + Math.round(((i + 1) / diffs.length) * 80));
+    await nextFrame();
+  }
+
+  renderResults();
+  setProgress('genProgress', 100);
+  setStatus('genStatus', 'Map generated.');
+  $('genBtn').disabled = false;
+  $('resultCard').style.display = 'block';
+}
+
+function renderResults(){
+  const grid = $('resultGrid');
+  grid.innerHTML = '';
+  DIFF_ORDER.forEach(d => {
+    if (!state.results[d]) return;
+    const notes = state.results[d];
+    const nps = (notes.length / state.duration).toFixed(2);
+    const card = document.createElement('div');
+    card.className = 'resultcard';
+    card.innerHTML = `<div class="diff">${d.replace('Plus','+')}</div>
+      <div class="notecount">${notes.length}</div>
+      <div class="nps">${nps} notes/sec</div>`;
+    grid.appendChild(card);
+  });
+}
+
+/* ============================= ZIP EXPORT ============================= */
+function buildInfoDat(diffs){
+  const songName = $('songName').value || 'Untitled';
+  const artist = $('artistName').value || 'Unknown Artist';
+  const mapper = $('mapperName').value || 'Bladegen Auto Mapper';
+  const subName = $('subName').value || '';
+
+  const difficultyBeatmaps = diffs.map(d => ({
+    _difficulty: d,
+    _difficultyRank: PRESETS[d].rank,
+    _beatmapFilename: DIFF_FILE(d),
+    _noteJumpMovementSpeed: PRESETS[d].njs,
+    _noteJumpStartBeatOffset: 0,
+    _customData: {}
+  }));
+
+  return {
+    _version: "2.0.0",
+    _songName: songName,
+    _songSubName: subName,
+    _songAuthorName: artist,
+    _levelAuthorName: mapper,
+    _beatsPerMinute: state.bpm,
+    _songTimeOffset: 0,
+    _shuffle: 0,
+    _shufflePeriod: 0.5,
+    _previewStartTime: Math.min(12, state.duration / 3),
+    _previewDuration: 10,
+    _songFilename: "song" + extOf(state.file.name),
+    _coverImageFilename: "cover.png",
+    _environmentName: "DefaultEnvironment",
+    _customData: {},
+    _difficultyBeatmapSets: [{
+      _beatmapCharacteristicName: "Standard",
+      _difficultyBeatmaps: difficultyBeatmaps
+    }]
+  };
+}
+
+function buildDiffDat(notes){
+  return {
+    _version: "2.0.0",
+    _notes: notes,
+    _obstacles: [],
+    _events: []
+  };
+}
+
+function extOf(name){
+  const m = name.match(/\.[^/.]+$/);
+  return m ? m[0] : '.mp3';
+}
+
+function makeCoverBlob(){
+  return new Promise(resolve => {
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 512;
+    const ctx = c.getContext('2d');
+    const grad = ctx.createLinearGradient(0, 0, 512, 512);
+    grad.addColorStop(0, '#ff3b5c');
+    grad.addColorStop(0.5, '#141420');
+    grad.addColorStop(1, '#3ba7ff');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 512, 512);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(0, 200, 512, 130);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 34px sans-serif';
+    ctx.textAlign = 'center';
+    const name = ($('songName').value || 'Untitled').slice(0, 22);
+    ctx.fillText(name, 256, 255);
+    ctx.font = '700 18px sans-serif';
+    ctx.fillStyle = '#dddddd';
+    ctx.fillText(($('artistName').value || 'Unknown Artist').slice(0, 30), 256, 290);
+    ctx.font = '700 13px sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillText('AUTO-MAPPED · ' + state.bpm.toFixed(1) + ' BPM', 256, 316);
+    c.toBlob(resolve, 'image/png');
+  });
+}
+
+async function downloadZip(){
+  if (Object.keys(state.results).length === 0) return;
+  $('downloadBtn').disabled = true;
+  $('downloadBtn').textContent = 'Packing…';
+
+  const zip = new JSZip();
+  const diffs = Object.keys(state.results);
+
+  zip.file('Info.dat', JSON.stringify(buildInfoDat(diffs), null, 1));
+  diffs.forEach(d => {
+    zip.file(DIFF_FILE(d), JSON.stringify(buildDiffDat(state.results[d]), null, 1));
+  });
+  zip.file('song' + extOf(state.file.name), state.file);
+
+  const coverBlob = await makeCoverBlob();
+  zip.file('cover.png', coverBlob);
+
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const safeName = ($('songName').value || 'map').replace(/[^a-z0-9]+/gi, '_');
+  a.download = `${safeName}_bladegen.zip`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+
+  $('downloadBtn').disabled = false;
+  $('downloadBtn').textContent = 'Download map folder (.zip)';
+}
+
+/* ============================= HELPERS ============================= */
+function setStatus(id, msg){ $(id).textContent = msg; }
+function setProgress(id, pct){ $(id).style.width = pct + '%'; }
+</script>
+</body>
+</html>
