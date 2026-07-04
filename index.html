@@ -228,7 +228,7 @@
 
   <footer>
     <b>Before you play it:</b> Beat Saber wants the audio as <b>.ogg</b>. This tool bundles your original file as-is — if it isn't already .ogg, convert it (Audacity, or any free online converter) and swap the file inside the folder before dropping it into <b>CustomLevels</b>.<br>
-    No walls or bombs are generated yet — this pass focuses on getting note timing, lanes, and swing flow right. Open the map in <b>ChroMapper</b> to fine-tune, add walls, or touch up any awkward patterns — the detected BPM and grid carry over cleanly.<br>
+    Maps are written in Beat Saber's v3 format, including <b>arcs</b> (long holds, used when a beat's gap to the next hit is notably longer than a single tap) and <b>chains</b> (a head note plus a string of linked segments, used for tight tremolo-style bursts on Expert/Expert+). No walls or bombs yet. Open the map in <b>ChroMapper</b> to fine-tune, add walls, or touch up any awkward patterns — the detected BPM and grid carry over cleanly.<br>
     Tempo detection uses a comb-filter search over the song's onset energy, so it works best on tracks with a steady, audible beat. Very ambient or rubato songs may need the manual BPM override.
   </footer>
 </div>
@@ -244,11 +244,11 @@ const state = {
 };
 
 const PRESETS = {
-  Easy:       {rank:1, njs:10, subdivision:1,    targetNPS:1.2, minGap:0.40, allowDoubles:false, doubleChance:0,    repeatChance:0.04},
-  Normal:     {rank:3, njs:12, subdivision:0.5,  targetNPS:1.8, minGap:0.28, allowDoubles:false, doubleChance:0,    repeatChance:0.06},
-  Hard:       {rank:5, njs:14, subdivision:0.5,  targetNPS:2.6, minGap:0.16, allowDoubles:true,  doubleChance:0.12, repeatChance:0.08},
-  Expert:     {rank:7, njs:16, subdivision:0.25, targetNPS:3.9, minGap:0.11, allowDoubles:true,  doubleChance:0.22, repeatChance:0.10},
-  ExpertPlus: {rank:9, njs:18, subdivision:0.25, targetNPS:5.2, minGap:0.09, allowDoubles:true,  doubleChance:0.34, repeatChance:0.12},
+  Easy:       {rank:1, njs:10, subdivision:1,    targetNPS:1.2, minGap:0.40, allowDoubles:false, doubleChance:0,    repeatChance:0.04, allowArcs:false, allowChains:false},
+  Normal:     {rank:3, njs:12, subdivision:0.5,  targetNPS:1.8, minGap:0.28, allowDoubles:false, doubleChance:0,    repeatChance:0.06, allowArcs:false, allowChains:false},
+  Hard:       {rank:5, njs:14, subdivision:0.5,  targetNPS:2.6, minGap:0.16, allowDoubles:true,  doubleChance:0.12, repeatChance:0.08, allowArcs:true,  longGapFactor:2.4, allowChains:false},
+  Expert:     {rank:7, njs:16, subdivision:0.25, targetNPS:3.9, minGap:0.11, allowDoubles:true,  doubleChance:0.22, repeatChance:0.10, allowArcs:true,  longGapFactor:2.2, allowChains:true, chainGapFactor:1.5, chainMinRun:3, chainMaxRun:5},
+  ExpertPlus: {rank:9, njs:18, subdivision:0.25, targetNPS:5.2, minGap:0.09, allowDoubles:true,  doubleChance:0.34, repeatChance:0.12, allowArcs:true,  longGapFactor:2.0, allowChains:true, chainGapFactor:1.5, chainMinRun:3, chainMaxRun:6},
 };
 const DIFF_ORDER = ['Easy','Normal','Hard','Expert','ExpertPlus'];
 const DIFF_FILE = d => (d === 'ExpertPlus' ? 'ExpertPlusStandard.dat' : d + 'Standard.dat');
@@ -512,10 +512,6 @@ function dirForSwing(swingDown, laneDelta){
   return swingDown ? 1 : 0;
 }
 
-function mkNote(tSec, lane, layer, type, dir){
-  return { _time: tSec * state.bpm / 60, _lineIndex: lane, _lineLayer: layer, _type: type, _cutDirection: dir };
-}
-
 // Sorted-array insert that enforces a minimum gap against both neighbors.
 // Returns true and inserts t if it fits, false otherwise. O(log n) search + O(n) splice.
 function fitsAndInsert(sortedArr, t, minGap){
@@ -529,6 +525,10 @@ function fitsAndInsert(sortedArr, t, minGap){
   if (t - prev < minGap || next - t < minGap) return false;
   sortedArr.splice(lo, 0, t);
   return true;
+}
+
+function mkColorNote(tSec, lane, layer, type, dir){
+  return { b: tSec * state.bpm / 60, x: lane, y: layer, c: type, d: dir, a: 0 };
 }
 
 function generateDifficulty(preset){
@@ -549,7 +549,6 @@ function generateDifficulty(preset){
   const targetEvents = Math.max(8, Math.round((preset.targetNPS * state.duration) / expectedBlocksPerEvent));
 
   // 3. Greedily take the strongest-onset candidates first, respecting minGap spacing.
-  //    This concentrates notes in energetic sections while still guaranteeing the overall rate.
   const byStrength = [...candidates].sort((a, b) => b.s - a.s);
   const chosenTimes = [];
   for (const c of byStrength){
@@ -558,30 +557,91 @@ function generateDifficulty(preset){
   }
   // chosenTimes is already chronologically sorted thanks to fitsAndInsert.
 
-  // 4. Walk the chosen beats in time order and lay down notes with alternating swing flow.
-  const notes = [];
+  // 4. Walk the chosen beats and assemble taps, arcs (long holds), and chains (tight bursts).
+  const colorNotes = [], sliders = [], burstSliders = [];
   let lastType = 1, lastLane = 1, lastLayer = 0, swingDown = true;
+  const expectedGap = 1 / preset.targetNPS;
+  const chainGapMax = preset.allowChains ? preset.minGap * preset.chainGapFactor : 0;
 
-  for (const t of chosenTimes){
+  let i = 0;
+  while (i < chosenTimes.length){
+    const t = chosenTimes[i];
+
+    // --- a run packed as tight as this difficulty allows becomes one chain ---
+    if (preset.allowChains){
+      let runEnd = i;
+      while (
+        runEnd + 1 < chosenTimes.length &&
+        (runEnd - i + 1) < preset.chainMaxRun &&
+        (chosenTimes[runEnd + 1] - chosenTimes[runEnd]) <= chainGapMax
+      ) runEnd++;
+      const runLen = runEnd - i + 1;
+
+      if (runLen >= preset.chainMinRun){
+        const type = lastType === 0 ? 1 : 0;
+        const lane = clamp(Math.round(lastLane) + randInt(-1, 1), 0, 3);
+        const layer = clamp(lastLayer + randInt(-1, 1), 0, 2);
+        const dir = dirForSwing(swingDown, lane - Math.round(lastLane));
+        const tailLane = clamp(lane + randInt(-1, 1), 0, 3);
+        const tailLayer = clamp(layer + randInt(-1, 1), 0, 2);
+
+        burstSliders.push({
+          c: type, b: t * state.bpm / 60, x: lane, y: layer, d: dir,
+          tb: chosenTimes[runEnd] * state.bpm / 60, tx: tailLane, ty: tailLayer,
+          sc: runLen, s: 0.5
+        });
+
+        lastType = type; lastLane = tailLane; lastLayer = tailLayer;
+        swingDown = !swingDown;
+        i = runEnd + 1;
+        continue;
+      }
+    }
+
+    // --- an isolated hit with a notably long gap before the next one becomes an arc ---
+    const next = i + 1 < chosenTimes.length ? chosenTimes[i + 1] : null;
+    const gapToNext = next !== null ? next - t : null;
+
+    if (preset.allowArcs && gapToNext !== null && gapToNext >= expectedGap * preset.longGapFactor){
+      const type = lastType === 0 ? 1 : 0;
+      const lane = clamp(Math.round(lastLane) + randInt(-1, 1), 0, 3);
+      const layer = clamp(lastLayer + randInt(-1, 1), 0, 2);
+      const dir = dirForSwing(swingDown, lane - Math.round(lastLane));
+      const tailLane = clamp(lane + randInt(-1, 1), 0, 3);
+      const tailLayer = clamp(layer + randInt(-1, 1), 0, 2);
+      const tailTime = Math.min(t + gapToNext * 0.85, t + 2.5); // cap arc length at 2.5s
+
+      sliders.push({
+        c: type, b: t * state.bpm / 60, x: lane, y: layer, d: dir, mu: 1,
+        tb: tailTime * state.bpm / 60, tx: tailLane, ty: tailLayer, tc: dir, tmu: 1, m: 0
+      });
+
+      lastType = type; lastLane = tailLane; lastLayer = tailLayer;
+      swingDown = !swingDown;
+      i++;
+      continue;
+    }
+
+    // --- otherwise, a plain tap (occasionally a double) ---
     const isDouble = preset.allowDoubles && Math.random() < preset.doubleChance;
-
     if (isDouble){
       const layer = Math.random() < 0.5 ? 0 : 1;
-      notes.push(mkNote(t, 1, layer, 0, dirForSwing(swingDown, -1)));
-      notes.push(mkNote(t, 2, layer, 1, dirForSwing(swingDown, 1)));
-      lastLane = 1.5;
-      lastLayer = layer;
+      colorNotes.push(mkColorNote(t, 1, layer, 0, dirForSwing(swingDown, -1)));
+      colorNotes.push(mkColorNote(t, 2, layer, 1, dirForSwing(swingDown, 1)));
+      lastLane = 1.5; lastLayer = layer;
     } else {
       const type = Math.random() < preset.repeatChance ? lastType : (lastType === 0 ? 1 : 0);
       const lane = clamp(Math.round(lastLane) + randInt(-1, 1), 0, 3);
       const layer = clamp(lastLayer + randInt(-1, 1), 0, 2);
       const dir = dirForSwing(swingDown, lane - Math.round(lastLane));
-      notes.push(mkNote(t, lane, layer, type, dir));
+      colorNotes.push(mkColorNote(t, lane, layer, type, dir));
       lastType = type; lastLane = lane; lastLayer = layer;
     }
     swingDown = !swingDown;
+    i++;
   }
-  return notes;
+
+  return { colorNotes, sliders, burstSliders, bombNotes: [], obstacles: [] };
 }
 
 /* ============================= GENERATION FLOW ============================= */
@@ -610,18 +670,27 @@ async function runGeneration(){
   $('resultCard').style.display = 'block';
 }
 
+function blockCount(result){
+  const chainBlocks = result.burstSliders.reduce((s, c) => s + c.sc, 0);
+  return result.colorNotes.length + result.sliders.length * 2 + chainBlocks;
+}
+
 function renderResults(){
   const grid = $('resultGrid');
   grid.innerHTML = '';
   DIFF_ORDER.forEach(d => {
     if (!state.results[d]) return;
-    const notes = state.results[d];
-    const nps = (notes.length / state.duration).toFixed(2);
+    const result = state.results[d];
+    const total = blockCount(result);
+    const nps = (total / state.duration).toFixed(2);
+    const extras = [];
+    if (result.sliders.length) extras.push(`${result.sliders.length} arcs`);
+    if (result.burstSliders.length) extras.push(`${result.burstSliders.length} chains`);
     const card = document.createElement('div');
     card.className = 'resultcard';
     card.innerHTML = `<div class="diff">${d.replace('Plus','+')}</div>
-      <div class="notecount">${notes.length}</div>
-      <div class="nps">${nps} notes/sec</div>`;
+      <div class="notecount">${total}</div>
+      <div class="nps">${nps} blocks/sec${extras.length ? ' · ' + extras.join(', ') : ''}</div>`;
     grid.appendChild(card);
   });
 }
@@ -665,12 +734,24 @@ function buildInfoDat(diffs){
   };
 }
 
-function buildDiffDat(notes){
+function buildDiffDat(result){
   return {
-    _version: "2.0.0",
-    _notes: notes,
-    _obstacles: [],
-    _events: []
+    version: "3.2.0",
+    bpmEvents: [],
+    rotationEvents: [],
+    colorNotes: result.colorNotes,
+    bombNotes: result.bombNotes,
+    obstacles: result.obstacles,
+    sliders: result.sliders,
+    burstSliders: result.burstSliders,
+    waypoints: [],
+    basicBeatmapEvents: [],
+    colorBoostBeatmapEvents: [],
+    lightColorEventBoxGroups: [],
+    lightRotationEventBoxGroups: [],
+    lightTranslationEventBoxGroups: [],
+    basicEventTypesWithKeywords: { d: [] },
+    useNormalEventsAsCompatibleEvents: true
   };
 }
 
